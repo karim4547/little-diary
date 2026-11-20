@@ -83,6 +83,10 @@ header p{margin:0;color:var(--soft);font-family:Caveat;font-size:23px}
 @keyframes fadeup{from{opacity:0;transform:translateY(8px)}}
 .memory{margin:16px auto 0;max-width:560px;border:2px dashed var(--pink);border-radius:20px;padding:12px 18px;text-align:left;background:color-mix(in srgb,var(--paper) 70%,transparent);animation:fadeup .8s .3s both}
 .memory b{color:var(--deep)}
+.note{margin:16px auto 0;max-width:560px;border-radius:20px;padding:14px 18px;text-align:left;background:var(--paper);border:2px solid var(--pink);font-size:15px;animation:fadeup .6s both}
+.note.warn{border-color:#e07a7a;background:#fff4f4}
+.note b{color:var(--deep)}.note.warn b{color:#b33}
+.note button{border:0;background:var(--pink2);color:var(--deep);font-weight:700;border-radius:999px;padding:8px 14px;min-height:40px;margin:8px 8px 0 0}
 .memory button{border:0;background:none;color:var(--deep);font-weight:700;padding:6px 0;text-decoration:underline}
 /* tabs */
 .tabs{position:sticky;top:10px;z-index:15;display:flex;gap:4px;margin:26px auto 0;max-width:520px;background:color-mix(in srgb,var(--paper) 88%,transparent);backdrop-filter:blur(8px);border:2px solid var(--pink2);border-radius:999px;padding:5px;box-shadow:var(--shadow)}
@@ -241,6 +245,7 @@ footer{text-align:center;margin-top:40px;font-size:13px;color:var(--soft)}
   </div>
   <div class="quote" aria-live="polite"><span id="quote"></span><button id="nextQuote" aria-label="Another quote">♡</button></div>
   <div id="memory"></div>
+  <div id="envNote"></div>
  </header>
 
  <nav class="tabs" role="tablist">
@@ -315,12 +320,21 @@ footer{text-align:center;margin-top:40px;font-size:13px;color:var(--soft)}
    </div>
    <div class="set">
     <h3>Keep a copy</h3>
-    <p class="small" style="margin:0 0 10px">Your pages live only on this phone. Download a backup sometimes, so you never lose them, and restore it on a new phone.</p>
+    <p class="small" style="margin:0 0 10px">Your pages live only on this phone. Download a backup sometimes so you never lose them, and restore it on a new phone.</p>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
      <button class="btn" id="backup">download backup</button>
      <label class="btn ghost" style="display:inline-grid;place-items:center;cursor:pointer">restore backup<input type="file" id="restore" accept=".json,application/json" hidden></label>
      <button class="btn ghost" id="copyAll">copy as text</button>
     </div>
+   </div>
+   <div class="set" id="whereSet">
+    <h3>Where are my pages?</h3>
+    <p class="small" style="margin:0">This diary has <b id="hereCount">0</b> saved here. Pages stay in the exact place they were written: Safari, Chrome, the home-screen app, or another app's browser each keep their own. If a page is missing, it's in one of the others:</p>
+    <ol class="small" style="margin:8px 0 0;padding-left:20px">
+     <li>Open the diary where the page was written (for example in Safari).</li>
+     <li>Go to themes and tap <b>download backup</b>.</li>
+     <li>Open the diary here and tap <b>restore backup</b>, then pick that file. Pages get added, never replaced.</li>
+    </ol>
    </div>
   </div>
  </section>
@@ -353,7 +367,7 @@ const THEMES=[["auto","match my mood"],["","strawberry milk"],["peach","peach so
 const PAL={"":["#fbe1e8","#f7c6d4","#e88aa6"],peach:["#ffe6da","#ffcdb8","#f59a7f"],cloud:["#e3ecf1","#c9dbe5","#8fb3c7"],lavender:["#ece4fb","#d8c9f5","#a98ce0"],milktea:["#efe6dd","#ddcdbd","#b89c84"],rain:["#e1e8f7","#c8d4ef","#8ea3d6"],mint:["#ddf3ea","#bfe6d6","#79c2a4"],honey:["#fbefcc","#f5dea0","#e0b453"],rose:["#ffdbe2","#ffbccb","#f27896"]};
 const moodOf=k=>MOODS.find(m=>m[0]===k);
 let entries=[],mood="",editing=null,toDelete=null,qi=Math.floor(Math.random()*QUOTES.length),store=null;
-const ls={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+const ls={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v);return localStorage.getItem(k)===v}catch(e){return false}}};
 let theme=ls.get("diary-theme");if(theme===null)theme="auto";
 const now0=new Date();let calY=now0.getFullYear(),calM=now0.getMonth(),selDay=new Date(now0.getFullYear(),now0.getMonth(),now0.getDate());
 
@@ -485,14 +499,15 @@ $("cancelEdit").onclick=()=>{resetForm();applyTheme()};
 $("noDel").onclick=()=>{$("veil").classList.remove("on");toDelete=null};
 $("yesDel").onclick=async()=>{const id=toDelete;$("veil").classList.remove("on");toDelete=null;entries=entries.filter(e=>e.id!==id);refresh();await persistDelete(id);toast("page torn out")};
 
-function refresh(){entries.sort((a,b)=>b.created.localeCompare(a.created));stats();if($("v-pages").classList.contains("on"))renderList();if($("v-cal").classList.contains("on"))renderCal()}
+function refresh(){const hc=$("hereCount");if(hc)hc.textContent=entries.length===1?"1 page":entries.length+" pages";entries.sort((a,b)=>b.created.localeCompare(a.created));stats();if($("v-pages").classList.contains("on"))renderList();if($("v-cal").classList.contains("on"))renderCal()}
 
 /* storage */
-const localSave=()=>ls.set("diary-entries",JSON.stringify(entries));
+const localSave=()=>ls.set("diary-entries",JSON.stringify(entries));let saveFailed=false;
 function localLoad(){try{entries=JSON.parse(ls.get("diary-entries")||"[]")}catch(e){entries=[]}}
-function fallback(){localSave()}
-async function persist(e){if(store&&store.kind==="db"){try{await store.col.doc(e.id).set(e);return}catch(err){fallback()}}localSave()}
-async function persistDelete(id){if(store&&store.kind==="db"){try{await store.col.doc(id).delete();return}catch(err){fallback()}}localSave()}
+function fallback(){store={kind:"local"};$("storeNote").textContent="saved in this browser only ♡";localSave()}
+async function persist(e){const ok=localSave();if(!ok){saveFailed=true;showSaveError()}return ok}
+async function persistDelete(id){return localSave()}
+function showSaveError(){$("envNote").innerHTML=`<div class="note warn"><b>This phone wouldn't let me save.</b> Your page is still on screen, so don't close the app. Go to themes and tap <b>download backup</b> right now. This usually happens in a private tab or inside another app's browser.</div>`}
 
 $("save").onclick=async()=>{
  const body=$("body").value.trim(),title=$("title").value.trim();
@@ -501,11 +516,22 @@ $("save").onclick=async()=>{
  if(editing){e=entries.find(x=>x.id===editing);if(!e)return resetForm();Object.assign(e,{title,body,mood,updated:now})}
  else{e={id:"p"+Date.now().toString(36)+Math.random().toString(36).slice(2,6),title,body,mood,fav:false,created:now,updated:now};entries.push(e)}
  const was=editing;burst($("save"));resetForm();ls.set("diary-draft","");refresh();applyTheme();
- await persist(e);toast(was?"changes saved ♡":"saved · "+fmtTime(new Date()));qi++;showQuote();newPrompt()};
+ const ok=await persist(e);if(ok)toast(was?"changes saved ♡":"saved · "+fmtTime(new Date()));else toast("couldn't save, download a backup now");checkEnv();qi++;showQuote();newPrompt()};
 
+function checkEnv(){
+ const ua=navigator.userAgent,ios=/iPhone|iPad|iPod/.test(ua)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
+ const standalone=(window.matchMedia&&matchMedia("(display-mode: standalone)").matches)||navigator.standalone===true;
+ const inapp=/Instagram|FBAN|FBAV|FB_IAB|Snapchat|TikTok|musical_ly|BytedanceWebview|Line\/|Twitter|LinkedInApp/i.test(ua);
+ const n=entries.length,el=$("envNote");if(saveFailed)return;
+ const last=Number(ls.get("diary-lastbackup")||0),old=n>=3&&Date.now()-last>7*864e5;
+ if(inapp){el.innerHTML=`<div class="note warn"><b>You're inside another app's browser.</b> Pages written here can disappear when it closes. Tap ⋯ and choose <b>Open in Safari</b> (or Chrome), then add the diary to your home screen.</div>`;return}
+ if(!standalone&&ls.get("diary-envok")!=="1"){el.innerHTML=`<div class="note"><b>Where your pages live:</b> pages are saved only in the place you write them. ${ios?"On iPhone, Safari and the home-screen app don't share pages.":"The browser and the installed app may not share pages."} Add the diary to your home screen and always write there. ${n?`There ${n===1?"is 1 page":"are "+n+" pages"} saved here.`:""}<br><button id="envOk">got it</button><button id="envHelp">moving pages?</button></div>`;
+  $("envOk").onclick=()=>{ls.set("diary-envok","1");el.innerHTML=""};$("envHelp").onclick=()=>{show("looks");$("whereSet").scrollIntoView({behavior:"smooth"})};return}
+ if(old){el.innerHTML=`<div class="note"><b>Time for a backup ♡</b> It's been a while. A backup keeps your pages safe if the app ever gets deleted.<br><button id="bkNow">download backup</button></div>`;$("bkNow").onclick=()=>{$("backup").click();el.innerHTML=""};return}
+ el.innerHTML=""}
 $("backup").onclick=()=>{const blob=new Blob([JSON.stringify({app:"little-diary",v:1,entries},null,1)],{type:"application/json"});
  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="my-diary-backup-"+new Date().toISOString().slice(0,10)+".json";document.body.appendChild(a);a.click();
- setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000);ls.set("diary-lastbackup",Date.now());toast("backup downloaded ♡")};
+ setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000);ls.set("diary-lastbackup",String(Date.now()));toast("backup downloaded ♡")};
 $("restore").onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const d=JSON.parse(await f.text());const list=Array.isArray(d)?d:d.entries;
  if(!Array.isArray(list))throw 0;const ids=new Set(entries.map(x=>x.id));let n=0;for(const x of list){if(x&&x.id&&x.created&&typeof x.body==="string"&&!ids.has(x.id)){entries.push({id:String(x.id),title:String(x.title||""),body:x.body,mood:String(x.mood||""),fav:!!x.fav,created:String(x.created),updated:String(x.updated||x.created)});n++}}
  localSave();refresh();applyTheme();toast(n?"restored "+n+" pages ♡":"those pages are already here")}catch(err){toast("that file isn't a diary backup")}e.target.value=""};
@@ -515,6 +541,7 @@ $("copyAll").onclick=async()=>{const txt=entries.map(e=>`${fmtStamp(new Date(e.c
 localLoad();refresh();paintThemes();applyTheme();$("storeNote").textContent="your pages stay private on this device ♡ make a backup now and then";
 try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
 if("serviceWorker" in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
+checkEnv();
 
 /* cover */
 $("openBook").onclick=()=>{$("cover").classList.add("open");startMusic();setTimeout(()=>{$("cover").remove()},1900)};

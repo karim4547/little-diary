@@ -84,6 +84,10 @@ header p{margin:0;color:var(--soft);font-family:Caveat;font-size:23px}
 .memory{margin:16px auto 0;max-width:560px;border:2px dashed var(--pink);border-radius:20px;padding:12px 18px;text-align:left;background:color-mix(in srgb,var(--paper) 70%,transparent);animation:fadeup .8s .3s both}
 .memory b{color:var(--deep)}
 .note{margin:16px auto 0;max-width:560px;border-radius:20px;padding:14px 18px;text-align:left;background:var(--paper);border:2px solid var(--pink);font-size:15px;animation:fadeup .6s both}
+.dlg.cloud{max-width:420px;width:100%;text-align:left}
+.dlg.cloud .title{margin:6px 0}
+.dlg.cloud .row{justify-content:flex-end}
+.chip.sync{cursor:pointer;border-color:var(--pink)}
 .note.warn{border-color:#e07a7a;background:#fff4f4}
 .note b{color:var(--deep)}.note.warn b{color:#b33}
 .note button{border:0;background:var(--pink2);color:var(--deep);font-weight:700;border-radius:999px;padding:8px 14px;min-height:40px;margin:8px 8px 0 0}
@@ -242,6 +246,7 @@ footer{text-align:center;margin-top:40px;font-size:13px;color:var(--soft)}
    <span class="chip">best <em id="best">0</em></span>
    <span class="chip"><em id="count">0</em> pages</span>
    <span class="chip"><em id="words">0</em> words</span>
+   <button class="chip sync" id="syncChip" hidden>☁ synced</button>
   </div>
   <div class="quote" aria-live="polite"><span id="quote"></span><button id="nextQuote" aria-label="Another quote">♡</button></div>
   <div id="memory"></div>
@@ -310,6 +315,15 @@ footer{text-align:center;margin-top:40px;font-size:13px;color:var(--soft)}
    <h2>Make it yours</h2>
    <p class="small" style="margin:0">With <b>match my mood</b>, the whole diary changes colour to the mood you pick while writing.</p>
    <div class="themes" id="themes"></div>
+   <div class="set" id="cloudSet">
+    <h3>Cloud saving</h3>
+    <p class="small" style="margin:0 0 10px" id="cloudState">Off. Pages are only on this phone.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+     <button class="btn" id="cloudBtn">turn on cloud saving</button>
+     <button class="btn ghost" id="syncNow" hidden>sync now</button>
+     <button class="btn ghost" id="cloudOff" hidden>turn off on this phone</button>
+    </div>
+   </div>
    <div class="set">
     <h3>Music volume</h3>
     <input type="range" id="vol" min="0" max="100" value="55" aria-label="Music volume">
@@ -352,6 +366,21 @@ footer{text-align:center;margin-top:40px;font-size:13px;color:var(--soft)}
  <div class="cute" style="font-size:24px;color:var(--deep)">tear out this page?</div>
  <p class="small">This can't be undone.</p>
  <div class="row"><button class="btn ghost" id="noDel">keep it</button><button class="btn" id="yesDel">delete</button></div>
+</div></div>
+<div class="veil" id="cloudVeil"><div class="dlg cloud" role="dialog" aria-modal="true" aria-labelledby="cTitle">
+ <div class="cute" id="cTitle" style="font-size:24px;color:var(--deep)">cloud saving ♡</div>
+ <div id="cStep1">
+  <p class="small">Paste your access key. It's the same key as the study planner, and this phone will remember it.</p>
+  <input id="cKey" type="password" class="title" placeholder="github_pat_…" autocomplete="off" autocapitalize="off" spellcheck="false">
+  <details><summary class="small">advanced</summary><input id="cRepo" class="title" value="karim4547/looli-diary" autocapitalize="off" spellcheck="false" aria-label="Repository"></details>
+ </div>
+ <div id="cStep2" hidden>
+  <p class="small" id="cPinMsg"></p>
+  <input id="cPin" type="password" inputmode="numeric" class="title" placeholder="diary PIN" autocomplete="off">
+  <input id="cPin2" type="password" inputmode="numeric" class="title" placeholder="type it again" autocomplete="off">
+ </div>
+ <p class="small" id="cErr" style="color:#b33;min-height:1.2em;margin:6px 0"></p>
+ <div class="row"><button class="btn ghost" id="cCancel">cancel</button><button class="btn" id="cNext">next</button></div>
 </div></div>
 <div id="toast"></div>
 
@@ -489,7 +518,7 @@ document.addEventListener("keydown",e=>{if(!$("v-cal").classList.contains("on")|
 async function onAct(e){const t=e.target;
  if(t.dataset.go!==undefined){show("write");$("body").focus();return}
  if(t.dataset.more!==undefined){t.closest(".entry").querySelector(".body").classList.remove("clip");t.remove();return}
- if(t.dataset.fav){const x=entries.find(y=>y.id===t.dataset.fav);if(!x)return;x.fav=!x.fav;t.classList.toggle("on",x.fav);t.textContent=x.fav?"♥":"♡";if(x.fav)burst(t);persist(x);return}
+ if(t.dataset.fav){const x=entries.find(y=>y.id===t.dataset.fav);if(!x)return;x.fav=!x.fav;x.ts=Date.now();t.classList.toggle("on",x.fav);t.textContent=x.fav?"♥":"♡";if(x.fav)burst(t);persist(x);return}
  if(t.dataset.edit){const x=entries.find(y=>y.id===t.dataset.edit);if(!x)return;editing=x.id;$("title").value=x.title;$("body").value=x.body;mood=x.mood||"";paintMoods();applyTheme();
   $("save").textContent="save changes ♡";$("cancelEdit").hidden=false;$("writeTitle").textContent="Editing a page";tick();onInput();show("write");$("body").focus();return}
  if(t.dataset.del){toDelete=t.dataset.del;$("veil").classList.add("on");$("noDel").focus()}}
@@ -505,19 +534,92 @@ function refresh(){const hc=$("hereCount");if(hc)hc.textContent=entries.length==
 const localSave=()=>ls.set("diary-entries",JSON.stringify(entries));let saveFailed=false;
 function localLoad(){try{entries=JSON.parse(ls.get("diary-entries")||"[]")}catch(e){entries=[]}}
 function fallback(){store={kind:"local"};$("storeNote").textContent="saved in this browser only ♡";localSave()}
-async function persist(e){const ok=localSave();if(!ok){saveFailed=true;showSaveError()}return ok}
-async function persistDelete(id){return localSave()}
+async function persist(e){const ok=localSave();if(!ok){saveFailed=true;showSaveError()}queueSync();return ok}
+async function persistDelete(id){tomb[id]=Date.now();saveTomb();queueSync();return localSave()}
 function showSaveError(){$("envNote").innerHTML=`<div class="note warn"><b>This phone wouldn't let me save.</b> Your page is still on screen, so don't close the app. Go to themes and tap <b>download backup</b> right now. This usually happens in a private tab or inside another app's browser.</div>`}
 
 $("save").onclick=async()=>{
  const body=$("body").value.trim(),title=$("title").value.trim();
  if(!body){toast("write a little something first ♡");$("body").focus();return}
  const now=new Date().toISOString();let e;
- if(editing){e=entries.find(x=>x.id===editing);if(!e)return resetForm();Object.assign(e,{title,body,mood,updated:now})}
- else{e={id:"p"+Date.now().toString(36)+Math.random().toString(36).slice(2,6),title,body,mood,fav:false,created:now,updated:now};entries.push(e)}
+ if(editing){e=entries.find(x=>x.id===editing);if(!e)return resetForm();Object.assign(e,{title,body,mood,updated:now,ts:Date.now()})}
+ else{e={id:"p"+Date.now().toString(36)+Math.random().toString(36).slice(2,6),title,body,mood,fav:false,created:now,updated:now,ts:Date.now()};entries.push(e)}
  const was=editing;burst($("save"));resetForm();ls.set("diary-draft","");refresh();applyTheme();
  const ok=await persist(e);if(ok)toast(was?"changes saved ♡":"saved · "+fmtTime(new Date()));else toast("couldn't save, download a backup now");checkEnv();qi++;showQuote();newPrompt()};
 
+/* ---------- cloud saving (encrypted, GitHub private repo) ---------- */
+const CFG="diary-cloud",PATH="diary.json";
+let cloud=null,cryptoKey=null,syncing=false,pending=false,qt=null,lastSync=0,tmp=null,tomb={};
+try{cloud=JSON.parse(ls.get(CFG)||"null")}catch(e){cloud=null}
+try{tomb=JSON.parse(ls.get("diary-tomb")||"{}")||{}}catch(e){tomb={}}
+function saveTomb(){ls.set("diary-tomb",JSON.stringify(tomb))}
+const toB64=u8=>{let s="";for(let i=0;i<u8.length;i+=0x8000)s+=String.fromCharCode.apply(null,u8.subarray(i,i+0x8000));return btoa(s)};
+const fromB64=b=>Uint8Array.from(atob(b),c=>c.charCodeAt(0));
+async function deriveKey(pin,salt){const base=await crypto.subtle.importKey("raw",new TextEncoder().encode(pin),"PBKDF2",false,["deriveKey"]);
+ return crypto.subtle.deriveKey({name:"PBKDF2",salt,iterations:250000,hash:"SHA-256"},base,{name:"AES-GCM",length:256},true,["encrypt","decrypt"])}
+async function encrypt(obj,key){const iv=crypto.getRandomValues(new Uint8Array(12));const ct=new Uint8Array(await crypto.subtle.encrypt({name:"AES-GCM",iv},key,new TextEncoder().encode(JSON.stringify(obj))));return{iv:toB64(iv),data:toB64(ct)}}
+async function decrypt(f,key){const pt=await crypto.subtle.decrypt({name:"AES-GCM",iv:fromB64(f.iv)},key,fromB64(f.data));return JSON.parse(new TextDecoder().decode(pt))}
+function gh(c,path,method="GET",body){return fetch(`https://api.github.com/repos/${c.repo}${path}`,{method,cache:"no-store",headers:{Authorization:"Bearer "+c.token,Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28",...(body?{"Content-Type":"application/json"}:{})},body:body?JSON.stringify(body):undefined})}
+async function pullFile(c){const r=await gh(c,"/contents/"+PATH);if(r.status===404)return{file:null,sha:null};if(!r.ok)throw{status:r.status};const j=await r.json();return{file:JSON.parse(atob(j.content.replace(/\s/g,""))),sha:j.sha}}
+const ets=e=>e.ts||Date.parse(e.updated||e.created)||0;
+const sig=(list,t)=>JSON.stringify([...list].sort((a,b)=>a.id<b.id?-1:1).map(e=>[e.id,ets(e),e.title,e.body,e.mood,!!e.fav,e.created,e.updated]))+JSON.stringify(Object.keys(t).sort().map(k=>[k,t[k]]));
+function merge(rE,rT){const t={...rT};for(const k in tomb)t[k]=Math.max(t[k]||0,tomb[k]);
+ const m={};for(const e of [...rE,...entries]){if(!e||!e.id)continue;const c=m[e.id];if(!c||ets(e)>ets(c))m[e.id]=e}
+ return{list:Object.values(m).filter(e=>!(t[e.id]&&t[e.id]>=ets(e))),t}}
+function setSync(state,text){const c=$("syncChip");c.hidden=!cloud;c.textContent="☁ "+text;c.dataset.s=state;
+ $("cloudState").textContent=cloud?(state==="ok"?"On. Pages are locked with your PIN and saved online. Last sync "+text.replace("synced ",""):text):"Off. Pages are only on this phone.";
+ $("cloudBtn").hidden=!!cloud;$("syncNow").hidden=!cloud;$("cloudOff").hidden=!cloud;
+ $("storeNote").textContent=cloud?"your pages are locked with your PIN and saved online ♡":"your pages stay private on this device ♡ make a backup now and then"}
+function queueSync(){if(!cloud)return;clearTimeout(qt);setSync("busy","saving…");qt=setTimeout(syncNow,1200)}
+async function syncNow(retry){
+ if(!cloud)return;if(syncing){pending=true;return}syncing=true;setSync("busy","syncing…");
+ try{
+  if(!cryptoKey)cryptoKey=await crypto.subtle.importKey("raw",fromB64(cloud.key),"AES-GCM",false,["encrypt","decrypt"]);
+  const{file,sha}=await pullFile(cloud);let rE=[],rT={};
+  if(file){const d=await decrypt(file,cryptoKey);rE=d.entries||[];rT=d.tomb||{}}
+  const before=sig(entries,tomb),{list,t}=merge(rE,rT);entries=list;tomb=t;
+  if(sig(entries,tomb)!==before){localSave();saveTomb();refresh();applyTheme()}
+  if(!file||sig(rE,rT)!==sig(entries,tomb)){
+   const enc=await encrypt({entries,tomb},cryptoKey);
+   const body={message:"diary sync",content:btoa(JSON.stringify({app:"little-diary",v:1,salt:cloud.salt,...enc,updated:new Date().toISOString()}))};if(sha)body.sha=sha;
+   const r=await gh(cloud,"/contents/"+PATH,"PUT",body);
+   if((r.status===409||r.status===422)&&!retry){syncing=false;return syncNow(true)}
+   if(!r.ok)throw{status:r.status}}
+  lastSync=Date.now();setSync("ok","synced "+fmtTime(new Date()));
+ }catch(err){const st=err&&err.status;
+  setSync("err",st===401?"key not working":st===403?"key can't save":st===404?"can't find diary repo":err&&err.name==="OperationError"?"PIN mismatch":"offline, will retry");
+  if(st===401||st===403||st===404)toast(st===403?"the key needs read & write access":"cloud saving needs attention, see themes")}
+ finally{syncing=false;if(pending){pending=false;queueSync()}}}
+function cloudStep(n){$("cStep1").hidden=n!==1;$("cStep2").hidden=n!==2;$("cErr").textContent="";$("cNext").textContent=n===1?"next":"turn on ♡"}
+function openCloud(){let pk="";try{pk=(JSON.parse(ls.get("looli-planner-sync")||"{}")||{}).token||""}catch(e){}
+ $("cKey").value=cloud?.token||pk;tmp=null;cloudStep(1);$("cloudVeil").classList.add("on");setTimeout(()=>$("cKey").focus(),50)}
+$("cCancel").onclick=()=>$("cloudVeil").classList.remove("on");
+$("cloudBtn").onclick=openCloud;$("syncChip").onclick=()=>{show("looks");$("cloudSet").scrollIntoView({behavior:"smooth"})};
+$("syncNow").onclick=()=>syncNow();
+$("cloudOff").onclick=()=>{cloud=null;cryptoKey=null;try{localStorage.removeItem(CFG)}catch(e){}setSync("off","");checkEnv();toast("cloud saving off on this phone. Your pages are still here")};
+$("cNext").onclick=async()=>{const err=t=>$("cErr").textContent=t,b=$("cNext");if(b.disabled)return;b.disabled=true;
+ try{
+ if(!tmp){const c={token:$("cKey").value.trim(),repo:($("cRepo").value.trim()||"karim4547/looli-diary")};
+  if(!c.token)return err("Paste the key first.");
+  let r;try{r=await gh(c,"")}catch(e){return err("Can't reach GitHub. Check the internet and try again.")}
+  if(r.status===401)return err("That key isn't working. It may be mistyped or expired.");
+  if(r.status===404||r.status===403)return err("This key can't open the diary repo yet. It needs access to "+c.repo+".");
+  if(!r.ok)return err("GitHub said no ("+r.status+"). Try again in a minute.");
+  const info=await r.json();if(info.permissions&&info.permissions.push===false)return err("This key can only read. It needs read & write access to "+c.repo+".");
+  let f;try{f=await pullFile(c)}catch(e){return err("Couldn't read the diary file ("+(e.status||"network")+").")}
+  tmp={...c,...f};$("cPin2").hidden=!!f.file;$("cPin").value="";$("cPin2").value="";
+  $("cPinMsg").innerHTML=f.file?"Enter your diary PIN to unlock your pages on this phone.":"Choose a diary PIN (at least 4 digits). Your pages get locked with it, so only you can read them. You'll type it once on each new phone. <b>If you forget it, the online copy can't be opened.</b>";
+  cloudStep(2);setTimeout(()=>$("cPin").focus(),50);return}
+ const pin=$("cPin").value.trim();if(pin.length<4)return err("The PIN needs at least 4 characters.");
+ let salt,key;
+ if(tmp.file){salt=fromB64(tmp.file.salt);b.textContent="unlocking…";key=await deriveKey(pin,salt);
+  try{await decrypt(tmp.file,key)}catch(e){b.textContent="turn on ♡";return err("That PIN doesn't open this diary. Try again.")}}
+ else{if(pin!==$("cPin2").value.trim())return err("The two PINs don't match.");salt=crypto.getRandomValues(new Uint8Array(16));b.textContent="locking…";key=await deriveKey(pin,salt)}
+ const raw=new Uint8Array(await crypto.subtle.exportKey("raw",key));
+ cloud={repo:tmp.repo,token:tmp.token,salt:toB64(salt),key:toB64(raw)};cryptoKey=null;ls.set(CFG,JSON.stringify(cloud));
+ $("cloudVeil").classList.remove("on");tmp=null;checkEnv();burst($("cloudBtn"));await syncNow();toast("cloud saving is on ♡")
+ }finally{b.disabled=false;if(tmp)$("cNext").textContent=$("cStep2").hidden?"next":"turn on ♡"}};
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&cloud&&Date.now()-lastSync>20000)syncNow()});
 function checkEnv(){
  const ua=navigator.userAgent,ios=/iPhone|iPad|iPod/.test(ua)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
  const standalone=(window.matchMedia&&matchMedia("(display-mode: standalone)").matches)||navigator.standalone===true;
@@ -525,6 +627,8 @@ function checkEnv(){
  const n=entries.length,el=$("envNote");if(saveFailed)return;
  const last=Number(ls.get("diary-lastbackup")||0),old=n>=3&&Date.now()-last>7*864e5;
  if(inapp){el.innerHTML=`<div class="note warn"><b>You're inside another app's browser.</b> Pages written here can disappear when it closes. Tap ⋯ and choose <b>Open in Safari</b> (or Chrome), then add the diary to your home screen.</div>`;return}
+ if(cloud){el.innerHTML="";return}
+ el.innerHTML=`<div class="note"><b>Keep your pages safe ♡</b> Turn on cloud saving. Your pages get locked with your own PIN and kept online, so they come back on any phone, even if the app is deleted.<br><button id="envCloud">turn on cloud saving</button></div>`;$("envCloud").onclick=()=>openCloud();return;
  if(!standalone&&ls.get("diary-envok")!=="1"){el.innerHTML=`<div class="note"><b>Where your pages live:</b> pages are saved only in the place you write them. ${ios?"On iPhone, Safari and the home-screen app don't share pages.":"The browser and the installed app may not share pages."} Add the diary to your home screen and always write there. ${n?`There ${n===1?"is 1 page":"are "+n+" pages"} saved here.`:""}<br><button id="envOk">got it</button><button id="envHelp">moving pages?</button></div>`;
   $("envOk").onclick=()=>{ls.set("diary-envok","1");el.innerHTML=""};$("envHelp").onclick=()=>{show("looks");$("whereSet").scrollIntoView({behavior:"smooth"})};return}
  if(old){el.innerHTML=`<div class="note"><b>Time for a backup ♡</b> It's been a while. A backup keeps your pages safe if the app ever gets deleted.<br><button id="bkNow">download backup</button></div>`;$("bkNow").onclick=()=>{$("backup").click();el.innerHTML=""};return}
@@ -534,14 +638,14 @@ $("backup").onclick=()=>{const blob=new Blob([JSON.stringify({app:"little-diary"
  setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000);ls.set("diary-lastbackup",String(Date.now()));toast("backup downloaded ♡")};
 $("restore").onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const d=JSON.parse(await f.text());const list=Array.isArray(d)?d:d.entries;
  if(!Array.isArray(list))throw 0;const ids=new Set(entries.map(x=>x.id));let n=0;for(const x of list){if(x&&x.id&&x.created&&typeof x.body==="string"&&!ids.has(x.id)){entries.push({id:String(x.id),title:String(x.title||""),body:x.body,mood:String(x.mood||""),fav:!!x.fav,created:String(x.created),updated:String(x.updated||x.created)});n++}}
- localSave();refresh();applyTheme();toast(n?"restored "+n+" pages ♡":"those pages are already here")}catch(err){toast("that file isn't a diary backup")}e.target.value=""};
+ localSave();refresh();applyTheme();queueSync();toast(n?"restored "+n+" pages ♡":"those pages are already here")}catch(err){toast("that file isn't a diary backup")}e.target.value=""};
 $("copyAll").onclick=async()=>{const txt=entries.map(e=>`${fmtStamp(new Date(e.created))}${e.mood?" · "+e.mood:""}\n${e.title?e.title+"\n":""}${e.body}`).join("\n\n— ♡ —\n\n");
  try{await navigator.clipboard.writeText(txt||"(no pages yet)");toast("copied all pages ♡")}catch(err){toast("couldn't copy here, sorry")}};
 
 localLoad();refresh();paintThemes();applyTheme();$("storeNote").textContent="your pages stay private on this device ♡ make a backup now and then";
 try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
 if("serviceWorker" in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
-checkEnv();
+checkEnv();if(cloud){setSync("busy","syncing…");syncNow()}else setSync("off","");
 
 /* cover */
 $("openBook").onclick=()=>{$("cover").classList.add("open");startMusic();setTimeout(()=>{$("cover").remove()},1900)};
